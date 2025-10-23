@@ -1,9 +1,8 @@
 use zellij_tile::prelude::*;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use std::convert::TryFrom;
-use std::path::Path;
-use std::{collections::BTreeMap, path::PathBuf};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Deserialize)]
 struct RenamePayload {
@@ -114,125 +113,26 @@ impl ZellijPlugin for State {
 }
 
 impl State {
-    fn get_git_worktree_root(&self, path: PathBuf) -> Option<PathBuf> {
-        if let Some(metadata) = self.path_metadata.get(&path) {
-            Some(metadata.git_worktree_root.clone())
-        } else {
-            if let Some(PermissionStatus::Granted) = self.permissions {
-                let mut context = BTreeMap::new();
-                context.insert(String::from("plugin"), String::from("tabula"));
-                context.insert(String::from("fn"), String::from("get_git_worktree_root"));
-                context.insert(String::from("path"), String::from(path.to_string_lossy()));
-                run_command_with_env_variables_and_cwd(
-                    &["git", "rev-parse", "--show-toplevel"],
-                    BTreeMap::new(),
-                    path,
-                    context,
-                );
-            }
+    /// Rebuild the pane_id -> tab_position mapping from current state
+    fn rebuild_pane_to_tab(&mut self) {
+        self.pane_to_tab.clear();
 
-            None
-        }
-    }
-
-    fn organize(&self) {
-        'tab: for tab in &self.tabs {
-            let tab_position = tab.position;
-
-            let panes: Vec<PaneInfo> = self
-                .panes
-                .panes
-                .clone()
-                .into_iter()
-                .filter(|(tab_index, _)| tab_index == &tab_position)
-                .flat_map(|(_, p)| p)
-                .filter(|p| !p.is_suppressed && !p.is_plugin)
-                .collect();
-
-            let working_dirs_in_tab: Vec<&PathBuf> = panes
-                .iter()
-                .filter_map(|p| self.pane_working_dirs.get(&p.id))
-                .collect();
-
-            if working_dirs_in_tab.is_empty() {
-                continue;
-            }
-
-            let tab_name = 'tab_name: {
-                let Some(first_working_dir) = working_dirs_in_tab.first().copied() else {
-                    // If there are no working dirs, skip this tab
-                    continue 'tab;
-                };
-
-                if working_dirs_in_tab.len() == 1 {
-                    break 'tab_name self.format_path(first_working_dir);
+        for (tab_position, pane_list) in &self.panes.panes {
+            for pane_info in pane_list {
+                // Only track regular panes (not plugins or suppressed panes)
+                if !pane_info.is_plugin && !pane_info.is_suppressed {
+                    self.pane_to_tab.insert(pane_info.id, *tab_position);
                 }
-
-                // If all working_dirs_in_tab are the same, use that as the tab name
-                if working_dirs_in_tab
-                    .iter()
-                    .all(|dir| *dir == first_working_dir)
-                {
-                    break 'tab_name format!(
-                        "{}/",
-                        self.format_path(first_working_dir).trim_end_matches('/')
-                    );
-                }
-
-                // Get the common directory of all entries in working_dirs_in_tab
-                let mut common_dir = first_working_dir.clone();
-
-                for dir in &working_dirs_in_tab {
-                    while !dir.starts_with(&common_dir) {
-                        if let Some(parent) = common_dir.parent() {
-                            common_dir = parent.to_path_buf();
-                        } else {
-                            break;
-                        }
-                    }
-                }
-
-                format!(
-                    "{}/* ({} panes)",
-                    self.format_path(&common_dir).trim_end_matches('/'),
-                    panes.len()
-                )
-            };
-
-            if self.tabs[tab_position].name == tab_name {
-                continue;
-            }
-
-            if let Ok(tab_position) = u32::try_from(tab_position) {
-                rename_tab(tab_position + 1, tab_name);
             }
         }
     }
 
-    fn format_path(&self, path: &Path) -> String {
-        let git_root_dir = self.get_git_worktree_root(path.to_path_buf());
-
-        let result = format!("{}", path.display());
-
-        if let Some(git_root_dir) = git_root_dir {
-            if let Some(git_root_dir_str) = git_root_dir.to_str() {
-                if path.starts_with(git_root_dir_str) {
-                    if let Some(git_root_basename) = git_root_dir.file_name() {
-                        if let Some(git_root_basename) = git_root_basename.to_str() {
-                            return result.replacen(git_root_dir_str, git_root_basename, 1);
-                        }
-                    }
-                }
-            }
+    /// Show an error toast to the user
+    fn show_error(&self, message: &str) {
+        eprintln!("{}", message);
+        // Only show toast if we have permission
+        if let Some(PermissionStatus::Granted) = self.permissions {
+            show_self(false);
         }
-
-        if let Some(home_dir) = self.userspace_configuration.get("home_dir") {
-            let home_dir = home_dir.trim_end_matches('/');
-            if path.starts_with(home_dir) {
-                return format!("~{}", result.trim_start_matches(home_dir));
-            }
-        }
-
-        result
     }
 }
