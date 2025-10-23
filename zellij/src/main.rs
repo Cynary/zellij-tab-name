@@ -95,60 +95,14 @@ impl ZellijPlugin for State {
         match event {
             Event::TabUpdate(tab_info) => {
                 self.tabs = tab_info;
+                self.rebuild_pane_to_tab();
             }
             Event::PaneUpdate(data) => {
                 self.panes = data;
+                self.rebuild_pane_to_tab();
             }
             Event::PermissionRequestResult(status) => {
                 self.permissions = Some(status);
-            }
-            Event::RunCommandResult(exit_code, stdout, stderr, context) => {
-                if context.get("plugin") != Some(&String::from("tabula")) {
-                    return false;
-                }
-
-                let Some(fn_name) = context.get("fn") else {
-                    eprintln!("Expected fn in context, got none");
-                    return false;
-                };
-
-                if exit_code != Some(0) {
-                    eprintln!(
-                        "Failed to run {}: exit_code: {:?}, stdout: {:?}, stderr: {:?}",
-                        fn_name,
-                        exit_code,
-                        String::from_utf8(stdout),
-                        String::from_utf8(stderr)
-                    );
-
-                    return false;
-                }
-
-                let Ok(stdout) = String::from_utf8(stdout) else {
-                    eprintln!("Failed to parse stdout for {fn_name}");
-                    return false;
-                };
-
-                let stdout = stdout.trim();
-
-                if fn_name != "get_git_worktree_root" {
-                    eprintln!("Unexpected fn: {fn_name}");
-                    return false;
-                }
-
-                let Some(path) = context.get("path") else {
-                    eprintln!("Expected path in context, got none");
-                    return false;
-                };
-
-                let path = PathBuf::from(path);
-
-                let git_worktree_root = PathBuf::from(stdout);
-
-                self.path_metadata
-                    .insert(path, PathMetadata { git_worktree_root });
-
-                self.organize();
             }
             _ => (),
         };
