@@ -41,10 +41,19 @@ impl ZellijPlugin for State {
     }
 
     fn pipe(&mut self, pipe_message: PipeMessage) -> bool {
+        #[cfg(debug_assertions)]
+        eprintln!("PLUGIN: Received pipe message: name='{}', has_payload={}",
+                  pipe_message.name, pipe_message.payload.is_some());
+
         // Only handle messages for our named pipe
         if pipe_message.name != "change-tab-name" {
+            #[cfg(debug_assertions)]
+            eprintln!("PLUGIN: Ignoring pipe '{}' (not 'change-tab-name')", pipe_message.name);
             return false;
         }
+
+        #[cfg(debug_assertions)]
+        eprintln!("PLUGIN: Processing change-tab-name pipe");
 
         // Check for payload
         let Some(payload) = pipe_message.payload else {
