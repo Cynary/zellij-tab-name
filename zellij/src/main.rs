@@ -4,30 +4,19 @@ use std::convert::TryFrom;
 use std::path::Path;
 use std::{collections::BTreeMap, path::PathBuf};
 
-#[derive(Debug)]
-struct PathMetadata {
-    git_worktree_root: PathBuf,
-}
-
 #[derive(Default)]
 struct State {
-    /// The configuration passed to the plugin from zellij
-    userspace_configuration: BTreeMap<String, String>,
-
-    /// The tabs currently open in the terminal, set by the `TabUpdate` event
+    /// The tabs currently open in the terminal
     tabs: Vec<TabInfo>,
 
-    /// The panes currently open in the terminal, set by the `PaneUpdate` event
+    /// The panes currently open in the terminal
     panes: PaneManifest,
 
-    /// Maps pane id to the working dir open in the pane
-    pane_working_dirs: BTreeMap<u32, PathBuf>,
+    /// Maps pane id to tab position (0-indexed)
+    pane_to_tab: BTreeMap<u32, usize>,
 
     /// Whether the plugin has the necessary permissions
     permissions: Option<PermissionStatus>,
-
-    /// Metadata about paths
-    path_metadata: BTreeMap<PathBuf, PathMetadata>,
 }
 
 register_plugin!(State);
