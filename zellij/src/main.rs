@@ -136,12 +136,8 @@ impl State {
         }
     }
 
-    /// Show an error toast to the user
+    /// Log an error message to stderr
     fn show_error(&self, message: &str) {
         eprintln!("{}", message);
-        // Only show toast if we have permission
-        if let Some(PermissionStatus::Granted) = self.permissions {
-            show_self(false);
-        }
     }
 }

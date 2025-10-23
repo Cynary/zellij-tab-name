@@ -27,7 +27,7 @@ load_plugins {
 Send a JSON payload via Zellij's pipe mechanism to rename a tab:
 
 ```bash
-echo '{"pane_id": "123", "name": "My Tab"}' | zellij pipe --name change-tab-name
+zellij pipe --name change-tab-name -- '{"pane_id": "123", "name": "My Tab"}'
 ```
 
 The plugin will:
@@ -49,7 +49,13 @@ The plugin will:
 
 ### Error Handling
 
-If something goes wrong (invalid JSON, pane not found, etc.), the plugin will show a toast notification with details.
+If something goes wrong (invalid JSON, pane not found, etc.), the plugin will log the error to Zellij's log file (typically `$TMPDIR/zellij-*/zellij-log/zellij.log`). You can view errors with:
+
+```bash
+tail -f $TMPDIR/zellij-*/zellij-log/zellij.log | grep "change-tab-name"
+```
+
+**Note:** The plugin must be loaded at Zellij startup (via the config above) to remain active. It runs in the background and doesn't show a UI.
 
 ## Shell Integration
 
@@ -60,8 +66,7 @@ You can integrate this with your shell to automatically rename tabs. For example
 PANE_ID=$ZELLIJ_PANE_ID
 
 # Rename tab based on some logic
-echo "{\"pane_id\": \"$PANE_ID\", \"name\": \"$(generate_name)\"}" | \
-  zellij pipe --name change-tab-name
+zellij pipe --name change-tab-name -- "{\"pane_id\": \"$PANE_ID\", \"name\": \"$(generate_name)\"}"
 ```
 
 ## Contributing
