@@ -1,8 +1,15 @@
 use zellij_tile::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use std::convert::TryFrom;
 use std::path::Path;
 use std::{collections::BTreeMap, path::PathBuf};
+
+#[derive(Debug, Deserialize)]
+struct RenamePayload {
+    pane_id: String,
+    name: String,
+}
 
 #[derive(Default)]
 struct State {
@@ -20,13 +27,6 @@ struct State {
 }
 
 register_plugin!(State);
-
-fn rem_first_and_last(value: &str) -> &str {
-    let mut chars = value.chars();
-    chars.next();
-    chars.next_back();
-    chars.as_str()
-}
 
 impl ZellijPlugin for State {
     fn load(&mut self, configuration: BTreeMap<String, String>) {
