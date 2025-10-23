@@ -42,35 +42,51 @@ impl ZellijPlugin for State {
     }
 
     fn pipe(&mut self, pipe_message: PipeMessage) -> bool {
-        eprintln!("pipe_message: {pipe_message:?}");
-
-        if pipe_message.name != "tabula" {
+        // Only handle messages for our named pipe
+        if pipe_message.name != "change-tab-name" {
             return false;
         }
 
+        // Check for payload
         let Some(payload) = pipe_message.payload else {
-            eprintln!("Expected payload, got none");
+            self.show_error("change-tab-name: missing payload");
             return false;
         };
 
-        let parts: Vec<&str> = payload.split(' ').collect();
+        // Parse JSON
+        let rename_payload: RenamePayload = match serde_json::from_str(&payload) {
+            Ok(p) => p,
+            Err(e) => {
+                self.show_error(&format!("change-tab-name: invalid JSON: {}", e));
+                return false;
+            }
+        };
 
-        if parts.len() != 2 {
-            eprintln!("Expected exactly 2 parts, got {}", parts.len());
+        // Parse pane_id
+        let pane_id: u32 = match rename_payload.pane_id.parse() {
+            Ok(id) => id,
+            Err(_) => {
+                self.show_error("change-tab-name: pane_id must be a string containing a number");
+                return false;
+            }
+        };
+
+        // Look up tab position
+        let Some(&tab_position) = self.pane_to_tab.get(&pane_id) else {
+            self.show_error(&format!("change-tab-name: pane {} not found", pane_id));
+            return false;
+        };
+
+        // Check if rename is needed
+        if self.tabs.get(tab_position).map(|t| &t.name) == Some(&rename_payload.name) {
+            // No-op: name already matches
             return false;
         }
 
-        let Ok(pane_id) = rem_first_and_last(parts[0]).parse::<u32>() else {
-            eprintln!("Failed to parse pane id: {}", parts[0]);
-            return false;
-        };
-
-        let pwd = rem_first_and_last(parts[1]);
-
-        self.pane_working_dirs
-            .insert(pane_id, pwd.to_string().into());
-
-        self.organize();
+        // Rename the tab (tab positions are 0-indexed internally, but rename_tab takes 1-indexed)
+        if let Ok(tab_index) = u32::try_from(tab_position) {
+            rename_tab(tab_index + 1, rename_payload.name);
+        }
 
         false
     }
