@@ -39,9 +39,6 @@ struct State {
     /// (for when Zellij fixes the issue)
     pane_to_stable_tab_id: BTreeMap<u32, u32>,
 
-    /// Tracks the next stable tab ID to assign (starts at 1)
-    next_stable_tab_id: u32,
-
     /// AUTO-UPDATE: Stores the original format string (with {tab_position} placeholder)
     /// per stable tab ID. When a tab's position changes, we re-evaluate and rename.
     stable_tab_id_to_format_str: BTreeMap<u32, String>,
@@ -55,9 +52,6 @@ register_plugin!(State);
 
 impl ZellijPlugin for State {
     fn load(&mut self, _configuration: BTreeMap<String, String>) {
-        // Initialize stable tab ID counter (Zellij tab IDs start at 1)
-        self.next_stable_tab_id = 1;
-
         request_permission(&[
             PermissionType::ReadApplicationState,
             PermissionType::ChangeApplicationState,
@@ -246,6 +240,37 @@ impl State {
         #[cfg(debug_assertions)]
         eprintln!("\n=== REBUILD PANE TO TAB ===");
 
+        // Step 0: Clean up stable IDs for panes that no longer exist
+        let mut current_pane_ids = std::collections::HashSet::new();
+        for pane_list in self.panes.panes.values() {
+            for pane_info in pane_list {
+                if !pane_info.is_plugin && !pane_info.is_suppressed {
+                    current_pane_ids.insert(pane_info.id);
+                }
+            }
+        }
+
+        // Remove stable IDs for deleted panes and collect which stable_tab_ids are gone
+        let mut deleted_stable_ids = std::collections::HashSet::new();
+        self.pane_to_stable_tab_id.retain(|pane_id, stable_id| {
+            let exists = current_pane_ids.contains(pane_id);
+            if !exists {
+                deleted_stable_ids.insert(*stable_id);
+                #[cfg(debug_assertions)]
+                eprintln!(
+                    "  CLEANUP: Removing stable_id {} for deleted pane {}",
+                    stable_id, pane_id
+                );
+            }
+            exists
+        });
+
+        // Clean up format strings and position tracking for deleted tabs
+        for &deleted_id in &deleted_stable_ids {
+            self.stable_tab_id_to_format_str.remove(&deleted_id);
+            self.stable_tab_id_to_last_position.remove(&deleted_id);
+        }
+
         // Step 1: Build tab_position -> stable_tab_id map from existing panes
         let mut tab_position_to_stable_id: BTreeMap<usize, u32> = BTreeMap::new();
 
@@ -290,15 +315,26 @@ impl State {
                                 existing_id
                             } else {
                                 // New tab, assign a new stable ID
-                                let new_id = self.next_stable_tab_id;
-                                self.next_stable_tab_id += 1;
+                                // Zellij uses auto-incrementing IDs: next_id = max(current_ids) + 1
+                                // But renormalizes when lowest tab is deleted
+                                let max_stable_id = self
+                                    .pane_to_stable_tab_id
+                                    .values()
+                                    .max()
+                                    .copied()
+                                    .unwrap_or(0);
+                                let new_id = max_stable_id + 1;
                                 tab_position_to_stable_id.insert(current_display_index, new_id);
 
                                 #[cfg(debug_assertions)]
-                                eprintln!(
-                                    "  NEW TAB: pane {} assigned new stable_id {} at position {}",
-                                    pane_info.id, new_id, current_display_index
-                                );
+                                {
+                                    let all_ids: Vec<_> =
+                                        self.pane_to_stable_tab_id.values().copied().collect();
+                                    eprintln!(
+                                        "  NEW TAB: pane {} assigned new stable_id {} (max was {}, existing IDs: {:?}) at position {}",
+                                        pane_info.id, new_id, max_stable_id, all_ids, current_display_index
+                                    );
+                                }
                                 new_id
                             };
 
