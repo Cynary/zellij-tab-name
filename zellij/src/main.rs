@@ -1,8 +1,8 @@
-use zellij_tile::prelude::*;
 use serde::Deserialize;
+use zellij_tile::prelude::*;
 
-use std::convert::TryFrom;
 use std::collections::BTreeMap;
+use std::convert::TryFrom;
 
 #[derive(Debug, Deserialize)]
 struct RenamePayload {
@@ -30,21 +30,24 @@ impl ZellijPlugin for State {
             PermissionType::ReadApplicationState,
             PermissionType::ChangeApplicationState,
         ]);
-        subscribe(&[
-            EventType::TabUpdate,
-            EventType::PaneUpdate,
-        ]);
+        subscribe(&[EventType::TabUpdate, EventType::PaneUpdate]);
     }
 
     fn pipe(&mut self, pipe_message: PipeMessage) -> bool {
         #[cfg(debug_assertions)]
-        eprintln!("PLUGIN: Received pipe message: name='{}', has_payload={}",
-                  pipe_message.name, pipe_message.payload.is_some());
+        eprintln!(
+            "PLUGIN: Received pipe message: name='{}', has_payload={}",
+            pipe_message.name,
+            pipe_message.payload.is_some()
+        );
 
         // Only handle messages for our named pipe
         if pipe_message.name != "change-tab-name" {
             #[cfg(debug_assertions)]
-            eprintln!("PLUGIN: Ignoring pipe '{}' (not 'change-tab-name')", pipe_message.name);
+            eprintln!(
+                "PLUGIN: Ignoring pipe '{}' (not 'change-tab-name')",
+                pipe_message.name
+            );
             return false;
         }
 
@@ -86,7 +89,10 @@ impl ZellijPlugin for State {
             Ok(name) => name,
             Err(e) => {
                 #[cfg(debug_assertions)]
-                eprintln!("PLUGIN: Failed to format name '{}': {}", rename_payload.name, e);
+                eprintln!(
+                    "PLUGIN: Failed to format name '{}': {}",
+                    rename_payload.name, e
+                );
 
                 self.show_error(&format!(
                     "change-tab-name: invalid name format '{}': {}",
@@ -145,8 +151,8 @@ impl State {
 
     /// Format tab name with tab_position placeholder
     fn format_tab_name(&self, format_str: &str, tab_position: usize) -> Result<String, String> {
-        use strfmt::strfmt;
         use std::collections::HashMap;
+        use strfmt::strfmt;
 
         // Create variables map with 1-indexed position
         let mut vars = HashMap::new();

@@ -1,3 +1,0 @@
-load_plugins {
-    "file:/Users/rodrigo.gomes/zellij-tabula/.worktrees/simple-tab-rename/zellij_tabula.wasm"
-}

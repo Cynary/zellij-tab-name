@@ -25,7 +25,7 @@ jobs:
         uses: dtolnay/rust-toolchain@1.82.0
         with:
           components: rustfmt, clippy
-          targets: wasm32-wasi
+          targets: wasm32-wasip1
 
       - name: Build
         run: cargo build --release
@@ -34,14 +34,12 @@ jobs:
       - name: Build changelog
         id: changelog
         uses: mikepenz/release-changelog-builder-action@v5
-        with:
-          configuration: "release-changelog-builder-config.json"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get the version
         id: get_version
-        run: echo ::set-output name=VERSION::${GITHUB_REF#refs/tags/}
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
       - name: Create release
         id: create_release
@@ -53,5 +51,4 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            zellij/target/wasm32-wasi/release/zellij-tabula.wasm
-            zellij-tabula.plugin.zsh
+            zellij/target/wasm32-wasip1/release/zellij-tabula.wasm
