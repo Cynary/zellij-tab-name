@@ -222,7 +222,6 @@ impl State {
                             #[cfg(debug_assertions)]
                             eprintln!("  EXISTING: pane {} has stable_id {} at display_index {}",
                                 pane_info.id, stable_id, current_display_index);
-                            break; // Found the stable ID for this tab, no need to check other panes
                         }
                     }
                 }
