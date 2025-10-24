@@ -51,4 +51,4 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            zellij/target/wasm32-wasip1/release/zellij-tabula.wasm
+            zellij/target/wasm32-wasip1/release/zellij-tab-name.wasm

@@ -1,4 +1,4 @@
-# zellij-tabula
+# zellij-tab-name
 
 A lightweight [Zellij](https://zellij.dev) plugin for explicit tab renaming with format string support.
 
@@ -10,7 +10,7 @@ Add to your [Zellij config](https://zellij.dev/documentation/configuration.html)
 
 ```kdl
 load_plugins {
-    "https://github.com/bezbac/zellij-tabula/releases/download/v0.4.0/zellij-tabula.wasm"
+    "https://github.com/YOUR_USERNAME/zellij-tab-name/releases/download/v0.3.0/zellij-tab-name.wasm"
 }
 ```
 
@@ -110,6 +110,8 @@ function change_tab_title() {
     # Escape special characters
     title="${title//\\/\\\\}"
     title="${title//\"/\\\"}"
+    title="${title//\{/\{\{}"
+    title="${title//\}/\}\}}"
 
     zellij pipe \
         --name change-tab-name \
@@ -146,7 +148,7 @@ cd zellij
 cargo build --release
 ```
 
-The WASM plugin will be at `zellij/target/wasm32-wasip1/release/zellij-tabula.wasm`.
+The WASM plugin will be at `zellij/target/wasm32-wasip1/release/zellij-tab-name.wasm`.
 
 ## License
 
@@ -154,4 +156,6 @@ BSD-3-Clause - see [LICENSE](LICENSE)
 
 ## Acknowledgments
 
-Based on Zellij's [rust-plugin-example](https://github.com/zellij-org/rust-plugin-example).
+This plugin is based on [zellij-tabula](https://github.com/bezbac/zellij-tabula) by Ben Bachem, which provided the foundation and structure for this project. The core functionality has been rewritten to focus on explicit, format-string-based tab renaming rather than automatic directory-based naming.
+
+Additional inspiration from Zellij's [rust-plugin-example](https://github.com/zellij-org/rust-plugin-example).
