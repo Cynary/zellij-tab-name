@@ -32,6 +32,6 @@ zellij-rename-tab() {
     new_name="${new_name//\{/\{\{}"  # Escape { for format string (literal braces)
     new_name="${new_name//\}/\}\}}"  # Escape } for format string (literal braces)
 
-    # Send the JSON payload to the plugin
-    zellij pipe --name change-tab-name -- "{\"pane_id\": \"$ZELLIJ_PANE_ID\", \"name\": \"$new_name\"}"
+    # Send the JSON payload to the plugin in background with no output
+    zellij pipe --name change-tab-name -- "{\"pane_id\": \"$ZELLIJ_PANE_ID\", \"name\": \"$new_name\"}" &>/dev/null &!
 }
