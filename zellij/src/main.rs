@@ -8,6 +8,14 @@ use std::convert::TryFrom;
 struct RenamePayload {
     pane_id: String,
     name: String,
+    /// Use stable tab ID tracking (default: true)
+    /// Set to false to use tab.position directly (will break after tab deletion until Zellij #3535 is fixed)
+    #[serde(default = "default_use_stable_ids")]
+    use_stable_ids: bool,
+}
+
+fn default_use_stable_ids() -> bool {
+    true
 }
 
 #[derive(Default)]
@@ -20,12 +28,29 @@ struct State {
 
     /// Maps pane id to tab position (0-indexed)
     pane_to_tab: BTreeMap<u32, usize>,
+
+    /// WORKAROUND for Zellij issue #3535:
+    /// https://github.com/zellij-org/zellij/issues/3535
+    ///
+    /// Zellij's rename_tab() expects stable auto-incrementing tab IDs,
+    /// but TabInfo doesn't expose them. We track stable IDs ourselves by
+    /// assigning each pane a stable tab ID when first seen.
+    ///
+    /// This can be disabled via use_stable_ids=false in the payload
+    /// (for when Zellij fixes the issue)
+    pane_to_stable_tab_id: BTreeMap<u32, u32>,
+
+    /// Tracks the next stable tab ID to assign (starts at 1)
+    next_stable_tab_id: u32,
 }
 
 register_plugin!(State);
 
 impl ZellijPlugin for State {
     fn load(&mut self, _configuration: BTreeMap<String, String>) {
+        // Initialize stable tab ID counter (Zellij tab IDs start at 1)
+        self.next_stable_tab_id = 1;
+
         request_permission(&[
             PermissionType::ReadApplicationState,
             PermissionType::ChangeApplicationState,
@@ -78,9 +103,10 @@ impl ZellijPlugin for State {
             }
         };
 
-        // Look up tab position
+        // Look up tab position (current display index)
         let Some(&tab_position) = self.pane_to_tab.get(&pane_id) else {
-            self.show_error(&format!("change-tab-name: pane {} not found", pane_id));
+            self.show_error(&format!("change-tab-name: pane {} not found in mapping (pane_to_tab has {} entries, tabs has {} entries)",
+                pane_id, self.pane_to_tab.len(), self.tabs.len()));
             return false;
         };
 
@@ -102,15 +128,50 @@ impl ZellijPlugin for State {
             }
         };
 
+        #[cfg(debug_assertions)]
+        eprintln!("PIPE: pane_id={}, tab_position={}, final_name={:?}", pane_id, tab_position, final_name);
+
         // Check if rename is needed
         if self.tabs.get(tab_position).map(|t| &t.name) == Some(&final_name) {
+            #[cfg(debug_assertions)]
+            eprintln!("PIPE: No-op, name already matches");
             return false;
         }
 
-        // Rename the tab (tab positions are 0-indexed internally, but rename_tab takes 1-indexed)
-        if let Ok(tab_index) = u32::try_from(tab_position) {
-            rename_tab(tab_index + 1, final_name);
-        }
+        // Get the tab_id to use for rename_tab
+        // See: https://github.com/zellij-org/zellij/issues/3535
+        let tab_id = if rename_payload.use_stable_ids {
+            // Mode 1 (default): Use our tracked stable tab IDs
+            // This works correctly even after tabs are deleted/reordered
+            let Some(&stable_tab_id) = self.pane_to_stable_tab_id.get(&pane_id) else {
+                self.show_error(&format!("change-tab-name: no stable tab ID found for pane {}", pane_id));
+                return false;
+            };
+
+            #[cfg(debug_assertions)]
+            eprintln!("PIPE: Using stable_tab_id={} (display_index={})", stable_tab_id, tab_position);
+
+            stable_tab_id
+        } else {
+            // Mode 2: Use tab.position + 1 (1-indexed)
+            // WARNING: This breaks after tab deletion due to Zellij bug #3535
+            let Some(tab) = self.tabs.get(tab_position) else {
+                self.show_error(&format!("change-tab-name: tab at display index {} not found", tab_position));
+                return false;
+            };
+
+            let tab_id = (tab.position as u32) + 1;
+
+            #[cfg(debug_assertions)]
+            eprintln!("PIPE: Using tab.position + 1 = {} (display_index={})", tab_id, tab_position);
+
+            tab_id
+        };
+
+        #[cfg(debug_assertions)]
+        eprintln!("PIPE: Calling rename_tab({}, {:?})", tab_id, final_name);
+
+        rename_tab(tab_id, final_name);
 
         false
     }
@@ -136,17 +197,82 @@ impl ZellijPlugin for State {
 
 impl State {
     /// Rebuild the pane_id -> tab_position mapping from current state
+    ///
+    /// WORKAROUND for Zellij issue #3535:
+    /// Also assigns stable tab IDs to panes for use with rename_tab().
+    /// All panes in the same tab share the same stable ID, which persists
+    /// even when other tabs are deleted.
     fn rebuild_pane_to_tab(&mut self) {
         self.pane_to_tab.clear();
+        // Don't clear pane_to_stable_tab_id - we want to remember stable IDs
 
-        for (tab_position, pane_list) in &self.panes.panes {
-            for pane_info in pane_list {
-                // Only track regular panes (not plugins or suppressed panes)
-                if !pane_info.is_plugin && !pane_info.is_suppressed {
-                    self.pane_to_tab.insert(pane_info.id, *tab_position);
+        #[cfg(debug_assertions)]
+        eprintln!("\n=== REBUILD PANE TO TAB ===");
+
+        // Step 1: Build tab_position -> stable_tab_id map from existing panes
+        let mut tab_position_to_stable_id: BTreeMap<usize, u32> = BTreeMap::new();
+
+        for (current_display_index, tab) in self.tabs.iter().enumerate() {
+            if let Some(pane_list) = self.panes.panes.get(&tab.position) {
+                for pane_info in pane_list {
+                    if !pane_info.is_plugin && !pane_info.is_suppressed {
+                        // If this pane already has a stable ID, remember it for this tab position
+                        if let Some(&stable_id) = self.pane_to_stable_tab_id.get(&pane_info.id) {
+                            tab_position_to_stable_id.insert(current_display_index, stable_id);
+                            #[cfg(debug_assertions)]
+                            eprintln!("  EXISTING: pane {} has stable_id {} at display_index {}",
+                                pane_info.id, stable_id, current_display_index);
+                            break; // Found the stable ID for this tab, no need to check other panes
+                        }
+                    }
                 }
             }
         }
+
+        // Step 2: Assign stable IDs to new panes and build pane_to_tab mapping
+        for (current_display_index, tab) in self.tabs.iter().enumerate() {
+            if let Some(pane_list) = self.panes.panes.get(&tab.position) {
+                for pane_info in pane_list {
+                    if !pane_info.is_plugin && !pane_info.is_suppressed {
+                        // Map pane to current display index
+                        self.pane_to_tab.insert(pane_info.id, current_display_index);
+
+                        // Assign stable tab ID if this is a new pane
+                        if !self.pane_to_stable_tab_id.contains_key(&pane_info.id) {
+                            let stable_id = if let Some(&existing_id) = tab_position_to_stable_id.get(&current_display_index) {
+                                // Tab already has a stable ID (from other panes), use it
+                                #[cfg(debug_assertions)]
+                                eprintln!("  NEW PANE in existing tab: pane {} gets stable_id {} from tab position {}",
+                                    pane_info.id, existing_id, current_display_index);
+                                existing_id
+                            } else {
+                                // New tab, assign a new stable ID
+                                let new_id = self.next_stable_tab_id;
+                                self.next_stable_tab_id += 1;
+                                tab_position_to_stable_id.insert(current_display_index, new_id);
+
+                                #[cfg(debug_assertions)]
+                                eprintln!("  NEW TAB: pane {} assigned new stable_id {} at position {}",
+                                    pane_info.id, new_id, current_display_index);
+                                new_id
+                            };
+
+                            self.pane_to_stable_tab_id.insert(pane_info.id, stable_id);
+                        }
+
+                        #[cfg(debug_assertions)]
+                        {
+                            let stable_id = self.pane_to_stable_tab_id.get(&pane_info.id).unwrap();
+                            eprintln!("  pane {} -> display_index={}, stable_tab_id={}",
+                                pane_info.id, current_display_index, stable_id);
+                        }
+                    }
+                }
+            }
+        }
+
+        #[cfg(debug_assertions)]
+        eprintln!("=== END REBUILD ===\n");
     }
 
     /// Format tab name with tab_position placeholder

@@ -27,12 +27,17 @@ zellij pipe --name change-tab-name -- '{"pane_id": "'"$ZELLIJ_PANE_ID"'", "name"
 ```json
 {
   "pane_id": "123",
-  "name": "Tab Name"
+  "name": "Tab Name",
+  "use_stable_ids": true
 }
 ```
 
+**Fields:**
 - `pane_id`: String containing the numeric ID of a pane (the tab containing that pane will be renamed)
 - `name`: Format string for the tab name (supports `{tab_position}` placeholder)
+- `use_stable_ids`: Optional boolean (default: `true`)
+  - `true`: Use stable tab ID tracking (works correctly after tab deletion)
+  - `false`: Use simpler approach (breaks after tab deletion - see Known Issues below)
 
 ### Format Strings
 
@@ -140,6 +145,18 @@ This automatically:
 - Shows the current directory name before each prompt
 - Shows the running command during execution
 - Prefixes tab names with their position (e.g., "1: project-name")
+
+## Known Issues
+
+### Tab Deletion Workaround (Zellij #3535)
+
+Due to [Zellij issue #3535](https://github.com/zellij-org/zellij/issues/3535), Zellij's `rename_tab()` API expects stable auto-incrementing tab IDs, but doesn't expose them through `TabInfo`. When tabs are deleted, the position values get renumbered, causing renames to target the wrong tab.
+
+**Our Solution:** The plugin tracks stable tab IDs internally by assigning each pane a stable ID when first seen. This is enabled by default (`use_stable_ids: true`) and works correctly even after tabs are deleted.
+
+**Alternative:** Set `use_stable_ids: false` in the payload to use the simpler approach (using `tab.position` directly). This will break after tab deletion until Zellij fixes the underlying issue.
+
+Once Zellij #3535 is resolved, the workaround can be removed and `use_stable_ids: false` will become the recommended default.
 
 ## Building from Source
 
