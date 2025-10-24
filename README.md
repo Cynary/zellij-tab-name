@@ -1,20 +1,24 @@
 # zellij-tabula
 
-A [Zellij](https://zellij.dev) plugin for renaming tabs via named pipes.
+A lightweight [Zellij](https://zellij.dev) plugin for explicit tab renaming with format string support.
 
-### 🚧 Disclaimer
+## Overview
 
-This project is currently under development and may be subject to frequent changes. Features may be added, modified, or removed without notice. Please use at your own risk and feel free to submit any feedback or suggestions. Thank you for your understanding.
+zellij-tabula is a simple background plugin that lets you rename Zellij tabs on-demand by sending JSON payloads through named pipes. It supports dynamic tab names with placeholders like `{tab_position}` for displaying the tab's position.
+
+**Key Features:**
+- **Explicit renaming:** You control when tabs are renamed (no automatic behavior)
+- **Format strings:** Use `{tab_position}` to include the 1-indexed tab position in names
+- **Lightweight:** Runs silently in the background with no UI
+- **Shell integration:** Includes a zsh helper function for easy tab renaming
 
 ## Installation
 
-zellij-tabula requires both a zellij-plugin _and_ a shell integration to function. As of right now, only zsh is supported.
+**Requirements:** Zellij `0.40.0` or newer
 
-**Requires Zellij `0.40.0` or newer**.
+### 1. Install the plugin
 
-### Installing the Zellij plugin
-
-Add the following to your [zellij config](https://zellij.dev/documentation/configuration.html):
+Add to your [zellij config](https://zellij.dev/documentation/configuration.html):
 
 ```kdl
 load_plugins {
@@ -22,18 +26,36 @@ load_plugins {
 }
 ```
 
-## Usage
+### 2. Add shell integration (optional but recommended)
 
-Send a JSON payload via Zellij's pipe mechanism to rename a tab:
+For zsh, source the helper function in your `.zshrc`:
 
 ```bash
-zellij pipe --name change-tab-name -- '{"pane_id": "123", "name": "My Tab"}'
+source /path/to/zellij-rename-tab.zsh
 ```
 
-The plugin will:
-1. Parse the JSON payload
-2. Find which tab contains the specified pane
-3. Rename that tab to the provided name
+This provides the `zellij-rename-tab` command with automatic escaping.
+
+## Usage
+
+### Quick Start
+
+Using the zsh helper (recommended):
+
+```bash
+zellij-rename-tab "My Tab Name"
+zellij-rename-tab "{tab_position}: Development"
+```
+
+### Direct pipe usage
+
+Send a JSON payload via Zellij's pipe mechanism:
+
+```bash
+zellij pipe --name change-tab-name -- '{"pane_id": "'"$ZELLIJ_PANE_ID"'", "name": "My Tab"}'
+```
+
+The plugin finds which tab contains the specified pane and renames it.
 
 ### Payload Format
 
@@ -45,7 +67,42 @@ The plugin will:
 ```
 
 - `pane_id`: String containing the numeric ID of a pane in the tab you want to rename
-- `name`: String with the new tab name
+- `name`: Format string for the new tab name (supports `{tab_position}` placeholder)
+
+### Format Strings
+
+The `name` field is treated as a format string that supports dynamic placeholders:
+
+**Placeholder:**
+- `{tab_position}` - Replaced with the 1-indexed tab position (first tab = 1, second tab = 2, etc.)
+
+**Escaping:**
+- Use `{{` to include a literal `{` in the tab name
+- Use `}}` to include a literal `}` in the tab name
+
+**Examples:**
+
+```bash
+# Prefix with tab position
+zellij pipe --name change-tab-name -- '{"pane_id": "123", "name": "{tab_position}: MyTab"}'
+# Result: "1: MyTab" (on first tab)
+
+# Custom format with brackets
+zellij pipe --name change-tab-name -- '{"pane_id": "123", "name": "[{tab_position}] MyTab"}'
+# Result: "[1] MyTab"
+
+# Tab position as suffix
+zellij pipe --name change-tab-name -- '{"pane_id": "123", "name": "MyTab [{tab_position}]"}'
+# Result: "MyTab [1]"
+
+# Literal braces in name (escaped)
+zellij pipe --name change-tab-name -- '{"pane_id": "123", "name": "My {{Project}}"}'
+# Result: "My {Project}"
+
+# No placeholder (backward compatible)
+zellij pipe --name change-tab-name -- '{"pane_id": "123", "name": "Static Name"}'
+# Result: "Static Name"
+```
 
 ### Error Handling
 
@@ -57,16 +114,30 @@ tail -f $TMPDIR/zellij-*/zellij-log/zellij.log | grep "change-tab-name"
 
 **Note:** The plugin must be loaded at Zellij startup (via the config above) to remain active. It runs in the background and doesn't show a UI.
 
-## Shell Integration
+## Advanced Usage
 
-You can integrate this with your shell to automatically rename tabs. For example, in zsh:
+### Custom shell integrations
+
+You can build custom integrations that generate tab names dynamically:
 
 ```bash
-# Get current pane ID
-PANE_ID=$ZELLIJ_PANE_ID
+# Example: Rename based on current directory
+zellij-rename-tab "{tab_position}: $(basename "$PWD")"
 
-# Rename tab based on some logic
-zellij pipe --name change-tab-name -- "{\"pane_id\": \"$PANE_ID\", \"name\": \"$(generate_name)\"}"
+# Example: Call from scripts
+custom_name=$(generate_name_from_context)
+zellij-rename-tab "$custom_name"
+```
+
+### Direct JSON construction
+
+When building JSON payloads manually (without the zsh helper), remember:
+- Escape `{` as `{{` and `}` as `}}` for literal braces
+- The `pane_id` identifies which tab to rename (the tab containing that pane)
+
+```bash
+zellij pipe --name change-tab-name -- "{\"pane_id\": \"$ZELLIJ_PANE_ID\", \"name\": \"My {{Project}}\"}"
+# Results in tab name: "My {Project}"
 ```
 
 ## Contributing
