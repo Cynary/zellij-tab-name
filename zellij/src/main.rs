@@ -20,9 +20,6 @@ struct State {
 
     /// Maps pane id to tab position (0-indexed)
     pane_to_tab: BTreeMap<u32, usize>,
-
-    /// Whether the plugin has the necessary permissions
-    permissions: Option<PermissionStatus>,
 }
 
 register_plugin!(State);
@@ -36,7 +33,6 @@ impl ZellijPlugin for State {
         subscribe(&[
             EventType::TabUpdate,
             EventType::PaneUpdate,
-            EventType::PermissionRequestResult,
         ]);
     }
 
@@ -85,15 +81,29 @@ impl ZellijPlugin for State {
             return false;
         };
 
+        // Format the tab name with tab_position placeholder
+        let final_name = match self.format_tab_name(&rename_payload.name, tab_position) {
+            Ok(name) => name,
+            Err(e) => {
+                #[cfg(debug_assertions)]
+                eprintln!("PLUGIN: Failed to format name '{}': {}", rename_payload.name, e);
+
+                self.show_error(&format!(
+                    "change-tab-name: invalid name format '{}': {}",
+                    rename_payload.name, e
+                ));
+                return false;
+            }
+        };
+
         // Check if rename is needed
-        if self.tabs.get(tab_position).map(|t| &t.name) == Some(&rename_payload.name) {
-            // No-op: name already matches
+        if self.tabs.get(tab_position).map(|t| &t.name) == Some(&final_name) {
             return false;
         }
 
         // Rename the tab (tab positions are 0-indexed internally, but rename_tab takes 1-indexed)
         if let Ok(tab_index) = u32::try_from(tab_position) {
-            rename_tab(tab_index + 1, rename_payload.name);
+            rename_tab(tab_index + 1, final_name);
         }
 
         false
@@ -108,9 +118,6 @@ impl ZellijPlugin for State {
             Event::PaneUpdate(data) => {
                 self.panes = data;
                 self.rebuild_pane_to_tab();
-            }
-            Event::PermissionRequestResult(status) => {
-                self.permissions = Some(status);
             }
             _ => (),
         };
@@ -134,6 +141,19 @@ impl State {
                 }
             }
         }
+    }
+
+    /// Format tab name with tab_position placeholder
+    fn format_tab_name(&self, format_str: &str, tab_position: usize) -> Result<String, String> {
+        use strfmt::strfmt;
+        use std::collections::HashMap;
+
+        // Create variables map with 1-indexed position
+        let mut vars = HashMap::new();
+        vars.insert("tab_position".to_string(), (tab_position + 1).to_string());
+
+        // Let strfmt handle all validation and escaping
+        strfmt(format_str, &vars).map_err(|e| e.to_string())
     }
 
     /// Log an error message to stderr
