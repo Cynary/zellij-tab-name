@@ -10,7 +10,7 @@ Add to your [Zellij config](https://zellij.dev/documentation/configuration.html)
 
 ```kdl
 load_plugins {
-    "https://github.com/Cynary/zellij-tab-name/releases/download/v0.4.0/zellij-tab-name.wasm"
+    "https://github.com/Cynary/zellij-tab-name/releases/download/v0.4.1/zellij-tab-name.wasm"
 }
 ```
 
