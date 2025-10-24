@@ -129,7 +129,10 @@ impl ZellijPlugin for State {
         };
 
         #[cfg(debug_assertions)]
-        eprintln!("PIPE: pane_id={}, tab_position={}, final_name={:?}", pane_id, tab_position, final_name);
+        eprintln!(
+            "PIPE: pane_id={}, tab_position={}, final_name={:?}",
+            pane_id, tab_position, final_name
+        );
 
         // Check if rename is needed
         if self.tabs.get(tab_position).map(|t| &t.name) == Some(&final_name) {
@@ -144,26 +147,38 @@ impl ZellijPlugin for State {
             // Mode 1 (default): Use our tracked stable tab IDs
             // This works correctly even after tabs are deleted/reordered
             let Some(&stable_tab_id) = self.pane_to_stable_tab_id.get(&pane_id) else {
-                self.show_error(&format!("change-tab-name: no stable tab ID found for pane {}", pane_id));
+                self.show_error(&format!(
+                    "change-tab-name: no stable tab ID found for pane {}",
+                    pane_id
+                ));
                 return false;
             };
 
             #[cfg(debug_assertions)]
-            eprintln!("PIPE: Using stable_tab_id={} (display_index={})", stable_tab_id, tab_position);
+            eprintln!(
+                "PIPE: Using stable_tab_id={} (display_index={})",
+                stable_tab_id, tab_position
+            );
 
             stable_tab_id
         } else {
             // Mode 2: Use tab.position + 1 (1-indexed)
             // WARNING: This breaks after tab deletion due to Zellij bug #3535
             let Some(tab) = self.tabs.get(tab_position) else {
-                self.show_error(&format!("change-tab-name: tab at display index {} not found", tab_position));
+                self.show_error(&format!(
+                    "change-tab-name: tab at display index {} not found",
+                    tab_position
+                ));
                 return false;
             };
 
             let tab_id = (tab.position as u32) + 1;
 
             #[cfg(debug_assertions)]
-            eprintln!("PIPE: Using tab.position + 1 = {} (display_index={})", tab_id, tab_position);
+            eprintln!(
+                "PIPE: Using tab.position + 1 = {} (display_index={})",
+                tab_id, tab_position
+            );
 
             tab_id
         };
@@ -220,8 +235,10 @@ impl State {
                         if let Some(&stable_id) = self.pane_to_stable_tab_id.get(&pane_info.id) {
                             tab_position_to_stable_id.insert(current_display_index, stable_id);
                             #[cfg(debug_assertions)]
-                            eprintln!("  EXISTING: pane {} has stable_id {} at display_index {}",
-                                pane_info.id, stable_id, current_display_index);
+                            eprintln!(
+                                "  EXISTING: pane {} has stable_id {} at display_index {}",
+                                pane_info.id, stable_id, current_display_index
+                            );
                         }
                     }
                 }
@@ -238,7 +255,9 @@ impl State {
 
                         // Assign stable tab ID if this is a new pane
                         if !self.pane_to_stable_tab_id.contains_key(&pane_info.id) {
-                            let stable_id = if let Some(&existing_id) = tab_position_to_stable_id.get(&current_display_index) {
+                            let stable_id = if let Some(&existing_id) =
+                                tab_position_to_stable_id.get(&current_display_index)
+                            {
                                 // Tab already has a stable ID (from other panes), use it
                                 #[cfg(debug_assertions)]
                                 eprintln!("  NEW PANE in existing tab: pane {} gets stable_id {} from tab position {}",
@@ -251,8 +270,10 @@ impl State {
                                 tab_position_to_stable_id.insert(current_display_index, new_id);
 
                                 #[cfg(debug_assertions)]
-                                eprintln!("  NEW TAB: pane {} assigned new stable_id {} at position {}",
-                                    pane_info.id, new_id, current_display_index);
+                                eprintln!(
+                                    "  NEW TAB: pane {} assigned new stable_id {} at position {}",
+                                    pane_info.id, new_id, current_display_index
+                                );
                                 new_id
                             };
 
@@ -262,8 +283,10 @@ impl State {
                         #[cfg(debug_assertions)]
                         {
                             let stable_id = self.pane_to_stable_tab_id.get(&pane_info.id).unwrap();
-                            eprintln!("  pane {} -> display_index={}, stable_tab_id={}",
-                                pane_info.id, current_display_index, stable_id);
+                            eprintln!(
+                                "  pane {} -> display_index={}, stable_tab_id={}",
+                                pane_info.id, current_display_index, stable_id
+                            );
                         }
                     }
                 }
