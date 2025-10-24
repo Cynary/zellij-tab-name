@@ -2,7 +2,6 @@ use serde::Deserialize;
 use zellij_tile::prelude::*;
 
 use std::collections::BTreeMap;
-use std::convert::TryFrom;
 
 #[derive(Debug, Deserialize)]
 struct RenamePayload {
@@ -254,14 +253,17 @@ impl State {
                         self.pane_to_tab.insert(pane_info.id, current_display_index);
 
                         // Assign stable tab ID if this is a new pane
+                        #[allow(clippy::map_entry)]
                         if !self.pane_to_stable_tab_id.contains_key(&pane_info.id) {
                             let stable_id = if let Some(&existing_id) =
                                 tab_position_to_stable_id.get(&current_display_index)
                             {
                                 // Tab already has a stable ID (from other panes), use it
                                 #[cfg(debug_assertions)]
-                                eprintln!("  NEW PANE in existing tab: pane {} gets stable_id {} from tab position {}",
-                                    pane_info.id, existing_id, current_display_index);
+                                eprintln!(
+                                    "  NEW PANE in existing tab: pane {} gets stable_id {} from tab position {}",
+                                    pane_info.id, existing_id, current_display_index
+                                );
                                 existing_id
                             } else {
                                 // New tab, assign a new stable ID
