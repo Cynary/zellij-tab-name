@@ -58,6 +58,20 @@ The `name` field supports dynamic placeholders:
 # Result: "My {Project}"
 ```
 
+### Auto-Update on Position Changes
+
+When you use `{tab_position}` in a tab name, the plugin automatically updates the tab name when its position changes (e.g., when you delete a tab that comes before it).
+
+**Example:**
+1. Create 3 tabs and name them: `"{tab_position}: Dev"`, `"{tab_position}: Test"`, `"{tab_position}: Prod"`
+2. Tabs show: "1: Dev", "2: Test", "3: Prod"
+3. Delete the first tab
+4. **Tabs automatically update to:** "1: Test", "2: Prod"
+
+This works because the plugin stores the original format string and re-evaluates it whenever a tab moves to a different position.
+
+**Note:** Auto-update only works for tabs renamed using `{tab_position}`. Static tab names (without placeholders) are not affected.
+
 ## Shell Integration
 
 ### Manual Integration (Simple)

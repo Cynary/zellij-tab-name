@@ -41,6 +41,14 @@ struct State {
 
     /// Tracks the next stable tab ID to assign (starts at 1)
     next_stable_tab_id: u32,
+
+    /// AUTO-UPDATE: Stores the original format string (with {tab_position} placeholder)
+    /// per stable tab ID. When a tab's position changes, we re-evaluate and rename.
+    stable_tab_id_to_format_str: BTreeMap<u32, String>,
+
+    /// Tracks the last known display position for each stable tab ID
+    /// Used to detect when positions change and trigger re-evaluation
+    stable_tab_id_to_last_position: BTreeMap<u32, usize>,
 }
 
 register_plugin!(State);
@@ -187,6 +195,21 @@ impl ZellijPlugin for State {
 
         rename_tab(tab_id, final_name);
 
+        // Store the original format string for auto-update on position changes
+        // (works in both modes - stable IDs are always tracked)
+        if let Some(&stable_tab_id) = self.pane_to_stable_tab_id.get(&pane_id) {
+            self.stable_tab_id_to_format_str
+                .insert(stable_tab_id, rename_payload.name.clone());
+            self.stable_tab_id_to_last_position
+                .insert(stable_tab_id, tab_position);
+
+            #[cfg(debug_assertions)]
+            eprintln!(
+                "PIPE: Stored format string {:?} for stable_tab_id {} at position {}",
+                rename_payload.name, stable_tab_id, tab_position
+            );
+        }
+
         false
     }
 
@@ -295,8 +318,61 @@ impl State {
             }
         }
 
+        // Auto-update: Check if any tab positions have changed and re-evaluate format strings
+        self.auto_update_tab_names();
+
         #[cfg(debug_assertions)]
         eprintln!("=== END REBUILD ===\n");
+    }
+
+    /// Auto-update tab names when positions change
+    /// For tabs with stored format strings, check if their position changed
+    /// and re-evaluate the format string with the new position
+    fn auto_update_tab_names(&mut self) {
+        // Build stable_tab_id -> current_display_index mapping
+        let mut stable_tab_id_to_current_position: BTreeMap<u32, usize> = BTreeMap::new();
+        for (&pane_id, &stable_tab_id) in &self.pane_to_stable_tab_id {
+            if let Some(&current_position) = self.pane_to_tab.get(&pane_id) {
+                stable_tab_id_to_current_position.insert(stable_tab_id, current_position);
+            }
+        }
+
+        // Check each tab with a stored format string for position changes
+        let tabs_to_update: Vec<(u32, usize, String)> = self
+            .stable_tab_id_to_format_str
+            .iter()
+            .filter_map(|(&stable_tab_id, format_str)| {
+                let current_position = stable_tab_id_to_current_position.get(&stable_tab_id)?;
+                let last_position = self.stable_tab_id_to_last_position.get(&stable_tab_id)?;
+
+                if current_position != last_position {
+                    #[cfg(debug_assertions)]
+                    eprintln!(
+                        "AUTO-UPDATE: stable_tab_id {} moved from position {} to {}",
+                        stable_tab_id, last_position, current_position
+                    );
+
+                    Some((stable_tab_id, *current_position, format_str.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Re-evaluate and rename tabs that moved
+        for (stable_tab_id, new_position, format_str) in tabs_to_update {
+            if let Ok(new_name) = self.format_tab_name(&format_str, new_position) {
+                #[cfg(debug_assertions)]
+                eprintln!(
+                    "AUTO-UPDATE: Renaming stable_tab_id {} to {:?} (position {})",
+                    stable_tab_id, new_name, new_position
+                );
+
+                rename_tab(stable_tab_id, new_name);
+                self.stable_tab_id_to_last_position
+                    .insert(stable_tab_id, new_position);
+            }
+        }
     }
 
     /// Format tab name with tab_position placeholder
