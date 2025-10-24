@@ -152,9 +152,15 @@ This automatically:
 
 Due to [Zellij issue #3535](https://github.com/zellij-org/zellij/issues/3535), Zellij's `rename_tab()` API expects stable auto-incrementing tab IDs, but doesn't expose them through `TabInfo`. When tabs are deleted, the position values get renumbered, causing renames to target the wrong tab.
 
-**Our Solution:** The plugin tracks stable tab IDs internally by assigning each pane a stable ID when first seen. This is enabled by default (`use_stable_ids: true`) and works correctly even after tabs are deleted.
+**Our Solution:** The plugin tracks stable tab IDs internally by assigning each pane a stable ID when first seen. This is enabled by default (`use_stable_ids: true`) and works correctly in most cases.
 
-**Alternative:** Set `use_stable_ids: false` in the payload to use the simpler approach (using `tab.position` directly). This will break after tab deletion until Zellij fixes the underlying issue.
+**Known Limitations of the Workaround:**
+- Using `zellij action close-tab` may cause issues with stable ID tracking
+- Using `zellij action move-tab` to reorder tabs may cause issues
+- Recommended: Close tabs by closing all panes within them (Ctrl+d or similar)
+- Recommended: Avoid moving tabs programmatically
+
+**Alternative:** Set `use_stable_ids: false` in the payload to use the simpler approach (using `tab.position` directly). This will break after any tab deletion until Zellij fixes the underlying issue.
 
 Once Zellij #3535 is resolved, the workaround can be removed and `use_stable_ids: false` will become the recommended default.
 
