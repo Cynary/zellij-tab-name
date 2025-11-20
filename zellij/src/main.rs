@@ -130,10 +130,18 @@ impl ZellijPlugin for State {
         };
 
         #[cfg(debug_assertions)]
-        eprintln!(
-            "PIPE: pane_id={}, tab_position={}, final_name={:?}",
-            pane_id, tab_position, final_name
-        );
+        {
+            eprintln!("\n=== PIPE RENAME REQUEST ===");
+            eprintln!(
+                "  pane_id={}, tab_position={}, final_name={:?}",
+                pane_id, tab_position, final_name
+            );
+            eprintln!("  Current pane_to_tab mappings: {:?}", self.pane_to_tab);
+            eprintln!(
+                "  Current pane_to_stable_tab_id: {:?}",
+                self.pane_to_stable_tab_id
+            );
+        }
 
         // Check if rename is needed
         if self.tabs.get(tab_position).map(|t| &t.name) == Some(&final_name) {
@@ -185,7 +193,10 @@ impl ZellijPlugin for State {
         };
 
         #[cfg(debug_assertions)]
-        eprintln!("PIPE: Calling rename_tab({}, {:?})", tab_id, final_name);
+        eprintln!(
+            "  >>> Calling rename_tab(tab_id={}, name={:?})",
+            tab_id, final_name
+        );
 
         rename_tab(tab_id, final_name);
 
@@ -234,33 +245,99 @@ impl State {
     /// All panes in the same tab share the same stable ID, which persists
     /// even when other tabs are deleted.
     fn rebuild_pane_to_tab(&mut self) {
+        // Save old pane_to_tab mapping before clearing (needed for detecting pane swaps)
+        let old_pane_to_tab = self.pane_to_tab.clone();
         self.pane_to_tab.clear();
         // Don't clear pane_to_stable_tab_id - we want to remember stable IDs
 
         #[cfg(debug_assertions)]
         eprintln!("\n=== REBUILD PANE TO TAB ===");
 
-        // Step 0: Clean up stable IDs for panes that no longer exist
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "  INPUT: tabs.len()={}, panes.panes.len()={}",
+            self.tabs.len(),
+            self.panes.panes.len()
+        );
+
+        // Step 0: Build current_pane_ids and detect new panes by position
         let mut current_pane_ids = std::collections::HashSet::new();
-        for pane_list in self.panes.panes.values() {
-            for pane_info in pane_list {
-                if !pane_info.is_plugin && !pane_info.is_suppressed {
-                    current_pane_ids.insert(pane_info.id);
+        let mut new_panes_by_position: BTreeMap<usize, Vec<u32>> = BTreeMap::new();
+
+        for (current_display_index, tab) in self.tabs.iter().enumerate() {
+            if let Some(pane_list) = self.panes.panes.get(&tab.position) {
+                for pane_info in pane_list {
+                    if !pane_info.is_plugin && !pane_info.is_suppressed {
+                        current_pane_ids.insert(pane_info.id);
+
+                        // Track new panes by their position
+                        if !self.pane_to_stable_tab_id.contains_key(&pane_info.id) {
+                            new_panes_by_position
+                                .entry(current_display_index)
+                                .or_default()
+                                .push(pane_info.id);
+                        }
+                    } else {
+                        #[cfg(debug_assertions)]
+                        eprintln!(
+                            "  FILTERED: pane {} (is_plugin={}, is_suppressed={})",
+                            pane_info.id, pane_info.is_plugin, pane_info.is_suppressed
+                        );
+                    }
                 }
             }
         }
 
-        // Remove stable IDs for deleted panes and collect which stable_tab_ids are gone
+        #[cfg(debug_assertions)]
+        eprintln!("  current_pane_ids: {:?}", current_pane_ids);
+
+        // Step 0.5: Transfer stable_ids from deleted panes to new panes at same position
+        // This handles the case where Zellij renumbers panes (e.g., opening scrollback editor)
+        let mut stable_id_transfers: Vec<(u32, u32, usize)> = Vec::new();
+
+        for (&old_pane_id, &stable_id) in &self.pane_to_stable_tab_id {
+            if !current_pane_ids.contains(&old_pane_id) {
+                // This pane is gone - check if there's a new pane at the same position
+                if let Some(&old_position) = old_pane_to_tab.get(&old_pane_id) {
+                    if let Some(new_panes) = new_panes_by_position.get_mut(&old_position) {
+                        if let Some(new_pane_id) = new_panes.pop() {
+                            stable_id_transfers.push((new_pane_id, stable_id, old_position));
+                            #[cfg(debug_assertions)]
+                            eprintln!(
+                                "  TRANSFER: pane {} -> pane {} (stable_id {} at position {})",
+                                old_pane_id, new_pane_id, stable_id, old_position
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // Collect transferred stable_ids so we don't delete them
+        let mut transferred_stable_ids = std::collections::HashSet::new();
+        for (_new_pane_id, stable_id, _position) in &stable_id_transfers {
+            transferred_stable_ids.insert(*stable_id);
+        }
+
+        // Apply transfers
+        for (new_pane_id, stable_id, _position) in stable_id_transfers {
+            self.pane_to_stable_tab_id.insert(new_pane_id, stable_id);
+        }
+
+        // Remove stable IDs for deleted panes (that weren't transferred)
         let mut deleted_stable_ids = std::collections::HashSet::new();
         self.pane_to_stable_tab_id.retain(|pane_id, stable_id| {
             let exists = current_pane_ids.contains(pane_id);
             if !exists {
-                deleted_stable_ids.insert(*stable_id);
-                #[cfg(debug_assertions)]
-                eprintln!(
-                    "  CLEANUP: Removing stable_id {} for deleted pane {}",
-                    stable_id, pane_id
-                );
+                // Don't delete stable_ids that were transferred to a new pane
+                if !transferred_stable_ids.contains(stable_id) {
+                    deleted_stable_ids.insert(*stable_id);
+                    #[cfg(debug_assertions)]
+                    eprintln!(
+                        "  CLEANUP: Removing stable_id {} for deleted pane {}",
+                        stable_id, pane_id
+                    );
+                }
             }
             exists
         });
